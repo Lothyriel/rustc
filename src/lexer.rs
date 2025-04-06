@@ -180,7 +180,7 @@ mod tests {
 
     #[test]
     fn hello_world() {
-        let tokens = tokenize(include_str!("../test_data/hello.rs"));
+        let tokens = tokenize(include_str!("../test_data/hello_world.rs"));
 
         let expected = vec![
             Token::Fn,
