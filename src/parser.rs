@@ -66,7 +66,7 @@ impl Parser {
 
         let params = self.get_fn_params();
 
-        let return_type = self.match_fn_return_type().unwrap_or(Type::Unit);
+        let return_type = self.match_fn_return_type().unwrap_or("()".to_string());
 
         self.expect(Token::OpenBrace);
 
@@ -167,7 +167,7 @@ impl Parser {
         todo!()
     }
 
-    fn match_fn_return_type(&mut self) -> Option<Type> {
+    fn match_fn_return_type(&mut self) -> Option<String> {
         match self.peek().expect("Expected -> or {") {
             Token::Hyphen => Some(self.get_fn_return_type()),
             Token::OpenBrace => None,
@@ -175,7 +175,7 @@ impl Parser {
         }
     }
 
-    fn get_fn_return_type(&self) -> Type {
+    fn get_fn_return_type(&self) -> String {
         todo!()
     }
 
@@ -205,7 +205,7 @@ impl Parser {
         args
     }
 
-    fn get_type(&self) -> Type {
+    fn get_type(&self) -> String {
         todo!()
     }
 }
@@ -260,7 +260,7 @@ pub struct Function {
     pub name: String,
     pub params: Vec<Variable>,
     pub body: Vec<Statement>,
-    pub return_type: Type,
+    pub return_type: String,
 }
 
 #[derive(Debug, PartialEq)]
@@ -278,12 +278,7 @@ pub enum Statement {
 #[derive(Debug, PartialEq)]
 pub struct Variable {
     pub name: String,
-    pub var_type: Type,
-}
-
-#[derive(Debug, PartialEq)]
-pub enum Type {
-    Unit,
+    pub var_type: String,
 }
 
 #[derive(Debug, PartialEq)]
@@ -321,7 +316,7 @@ mod tests {
                     "println".to_string(),
                     vec![Expression::String("Hello, World!".to_string())],
                 ))],
-                return_type: Type::Unit,
+                return_type: "()".to_string(),
             })],
         };
 
