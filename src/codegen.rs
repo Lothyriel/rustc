@@ -73,11 +73,15 @@ fn fmt_body(stmts: &[Statement], return_type: &str) -> String {
 
 fn fmt_stmt(s: &Statement) -> String {
     let stmt = match s {
-        Statement::Expression(expression) => fmt_expression(expression),
-        Statement::Assignment(_, expression) => todo!(),
+        Statement::Expression(expr) => fmt_expression(expr),
+        Statement::Assignment(id, expr) => fmt_assignment(id, expr),
     };
 
     stmt + ";"
+}
+
+fn fmt_assignment(id: &str, expr: &Expression) -> String {
+    format!("{} {} = {}", expr.get_type(), id, fmt_expression(expr))
 }
 
 fn fmt_expression(expression: &Expression) -> String {
@@ -131,4 +135,22 @@ fn write_includes(output: &mut String, includes: &[&str]) {
     }
 
     output.push_str("\n\n");
+}
+
+impl Expression {
+    fn get_type(&self) -> &str {
+        match self {
+            Expression::I32(_) => "i32",
+            Expression::Char(_) => "char",
+            Expression::String(_) => "String",
+            Expression::Bool(_) => "bool",
+            Expression::UnaryOp(_, _) => todo!(),
+            Expression::BinaryOp(expression, binary_op, expression1) => todo!(),
+            Expression::FunctionCall(identifier, vec) => todo!(),
+            Expression::MethodCall(expression, _, vec) => todo!(),
+            Expression::DeclMacroCall(identifier, vec) => todo!(),
+            Expression::Variable(_) => todo!(),
+            Expression::Ref(e) => e.get_type(),
+        }
+    }
 }
