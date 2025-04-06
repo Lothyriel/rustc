@@ -1,13 +1,15 @@
-use crate::parser::{Ast, Definition, Expression, Function, Statement, Type, Variable};
+use crate::parser::{Ast, Definition, Expression, Function, Statement, Variable};
 
 impl Ast {
-    pub fn generate(self) -> String {
+    pub fn generate(&mut self) -> String {
         let mut output = String::new();
+
         let includes = vec!["stdio.h"];
+        write_includes(&mut output, &includes);
 
-        add_includes(&mut output, &includes);
+        edit_main_signature(self.definitions.as_mut_slice());
 
-        for def in self.definitions {
+        for def in &self.definitions {
             output += &match def {
                 Definition::Struct(_) => todo!(),
                 Definition::Function(f) => format_fn(f),
@@ -18,71 +20,100 @@ impl Ast {
     }
 }
 
-fn format_fn(f: Function) -> String {
-    let is_main = f.name == "main" && f.return_type == Type::Unit;
+fn edit_main_signature(defs: &mut [Definition]) {
+    let main = defs
+        .iter_mut()
+        .find_map(|d| match d {
+            Definition::Function(f) if f.name == "main" => Some(f),
+            _ => None,
+        })
+        .expect("Program doens't contain main function");
 
-    let return_type = if is_main {
-        "int"
-    } else {
-        &format!("{:?}", format_type(f.return_type))
-    };
+    main.return_type = "i32".to_string();
+    main.body.push(Statement::Expression(Expression::I32(0)));
+}
 
+fn format_fn(f: &Function) -> String {
     format!(
-        "{} {}({}) {{ {} }}",
-        return_type,
+        "{} {}({}) {{\n{} \n}}",
+        translate_type(&f.return_type),
         f.name,
-        format_params(f.params),
-        format_body(f.body, is_main),
+        format_params(&f.params),
+        format_body(&f.body, &f.return_type),
     )
 }
 
-fn format_params(params: Vec<Variable>) -> String {
+fn format_params(params: &[Variable]) -> String {
     let mut output = vec![];
 
     for p in params {
-        output.push(format!("{} {}", format_type(p.var_type), p.name));
+        output.push(format!("{} {}", translate_type(&p.var_type), p.name));
     }
 
     output.join(",")
 }
 
-fn format_body(stmts: Vec<Statement>, is_main: bool) -> String {
-    let mut output = vec![];
+fn format_body(stmts: &[Statement], return_type: &str) -> String {
+    let mut output = Vec::new();
 
-    for s in stmts {
-        output.push(format_stmt(s) + "\n");
+    let is_void = return_type == "()";
+
+    for (i, s) in stmts.iter().enumerate() {
+        let s = if !is_void && i == stmts.len() - 1 {
+            format!("return {}", format_stmt(s))
+        } else {
+            format_stmt(s)
+        };
+
+        output.push(s);
     }
 
-    if is_main {
-        output.push("return 0".to_string());
-    }
-
-    output.join(",")
+    output.join("\n")
 }
 
-fn format_stmt(s: Statement) -> String {
-    match s {
-        Statement::Expression(expression) => format_expression(expression) + ";",
+fn format_stmt(s: &Statement) -> String {
+    let stmt = match s {
+        Statement::Expression(expression) => format_expression(expression),
         Statement::Let(_, expression) => todo!(),
-    }
+    };
+
+    stmt + ";"
 }
 
-fn format_expression(expression: Expression) -> String {
+fn format_expression(expression: &Expression) -> String {
     match expression {
         Expression::I32(n) => format!("{}", n),
         Expression::Char(c) => format!("{}", c),
-        Expression::String(s) => s,
+        Expression::String(s) => format!("\"{}\"", s),
         Expression::Bool(_) => todo!(),
         Expression::UnaryOp(unary_op, expression) => todo!(),
         Expression::BinaryOp(expression, binary_op, expression1) => todo!(),
         Expression::FunctionCall(id, args) | Expression::DeclMacroCall(id, args) => {
-            format!("{}({})", id, format_fn_args(args))
+            format!("{}({})", translate_fn(id), format_fn_args(args))
         }
         Expression::Variable(_) => todo!(),
     }
 }
 
-fn format_fn_args(args: Vec<Expression>) -> String {
+fn translate_fn(id: &str) -> &'static str {
+    match id {
+        "println" => "printf",
+        _ => panic!("Translation for function {id} not found"),
+    }
+}
+
+fn translate_type(t: &str) -> &'static str {
+    match t {
+        "()" => "void",
+        "i32" => "int",
+        "i64" => "long",
+        "u32" => "unsigned int",
+        "u64" => "unsigned long",
+        _ => panic!("Translation for type {t} not found"),
+    }
+}
+
+fn format_fn_args(args: &[Expression]) -> String {
     let mut output = vec![];
 
     for a in args {
@@ -92,11 +123,7 @@ fn format_fn_args(args: Vec<Expression>) -> String {
     output.join(",")
 }
 
-fn format_type(t: Type) -> String {
-    todo!()
-}
-
-fn add_includes(output: &mut String, includes: &[&str]) {
+fn write_includes(output: &mut String, includes: &[&str]) {
     for include in includes {
         output.push_str(&format!("#include <{}>", include));
     }
