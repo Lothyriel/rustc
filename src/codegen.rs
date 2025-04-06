@@ -1,7 +1,7 @@
-use crate::parser::{Ast, Definition, Expression, Function, Statement, Variable};
+use crate::parser::{Ast, Definition, Expression, Function, Identifier, Statement, Variable};
 
 impl Ast {
-    pub fn generate(&mut self) -> String {
+    pub fn generate(mut self) -> String {
         let mut output = String::new();
 
         let includes = vec!["stdio.h"];
@@ -9,10 +9,10 @@ impl Ast {
 
         edit_main_signature(self.definitions.as_mut_slice());
 
-        for def in &self.definitions {
+        for def in self.definitions {
             output += &match def {
                 Definition::Struct(_) => todo!(),
-                Definition::Function(f) => format_fn(f),
+                Definition::Function(f) => format_fn(&f),
             };
         }
 
@@ -24,7 +24,7 @@ fn edit_main_signature(defs: &mut [Definition]) {
     let main = defs
         .iter_mut()
         .find_map(|d| match d {
-            Definition::Function(f) if f.name == "main" => Some(f),
+            Definition::Function(f) if f.id.expect_single() == "main" => Some(f),
             _ => None,
         })
         .expect("Program doens't contain main function");
@@ -35,9 +35,9 @@ fn edit_main_signature(defs: &mut [Definition]) {
 
 fn format_fn(f: &Function) -> String {
     format!(
-        "{} {}({}) {{\n{} \n}}",
+        "{} {}({}) {{\n{}\n}}",
         translate_type(&f.return_type),
-        f.name,
+        f.id.expect_single(),
         format_params(&f.params),
         format_body(&f.body, &f.return_type),
     )
@@ -74,7 +74,7 @@ fn format_body(stmts: &[Statement], return_type: &str) -> String {
 fn format_stmt(s: &Statement) -> String {
     let stmt = match s {
         Statement::Expression(expression) => format_expression(expression),
-        Statement::Let(_, expression) => todo!(),
+        Statement::Assignment(_, expression) => todo!(),
     };
 
     stmt + ";"
@@ -92,13 +92,15 @@ fn format_expression(expression: &Expression) -> String {
             format!("{}({})", translate_fn(id), format_fn_args(args))
         }
         Expression::Variable(_) => todo!(),
+        Expression::MethodCall(_, _, _) => todo!(),
+        Expression::Ref(_) => todo!(),
     }
 }
 
-fn translate_fn(id: &str) -> &'static str {
-    match id {
-        "println" => "printf",
-        _ => panic!("Translation for function {id} not found"),
+fn translate_fn(id: &Identifier) -> &'static str {
+    match id.segments.as_slice() {
+        [x] if x == "println" || x == "print" => "printf",
+        _ => panic!("Translation for function {:?} not found", id),
     }
 }
 

@@ -5,7 +5,7 @@ mod parser;
 pub fn transpile(code: &str) -> String {
     let tokens = lexer::tokenize(code);
 
-    let mut ast = parser::parse(tokens);
+    let ast = parser::parse(tokens);
 
     ast.generate()
 }

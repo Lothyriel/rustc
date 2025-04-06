@@ -3,8 +3,8 @@ pub fn tokenize(code: &str) -> Vec<Token> {
 
     while let Some(cur) = lex.peek() {
         let token = match cur {
-            n if n.is_ascii_alphabetic() => lex.match_str(),
             n if n.is_ascii_digit() => lex.get_number_literal(),
+            n if n.is_ascii_alphabetic() => lex.match_str(),
             CHAR_DELIM => lex.match_char_literal(),
             STR_DELIM => lex.match_str_literal(),
             b'(' => lex.consume(Token::OpenParen),
@@ -12,8 +12,9 @@ pub fn tokenize(code: &str) -> Vec<Token> {
             b'{' => lex.consume(Token::OpenBrace),
             b'}' => lex.consume(Token::CloseBrace),
             // todo: add double colon disambig
-            b':' => lex.consume(Token::Colon),
+            b':' => lex.match_colon(),
             b';' => lex.consume(Token::Semicolon),
+            b',' => lex.consume(Token::Comma),
             b'+' => lex.consume(Token::Plus),
             // todo add thin arrow disambig
             b'-' => lex.consume(Token::Hyphen),
@@ -21,7 +22,9 @@ pub fn tokenize(code: &str) -> Vec<Token> {
             // todo: add comments parsing
             b'/' => lex.consume(Token::Div),
             b'!' => lex.consume(Token::Bang),
+            b'.' => lex.consume(Token::Dot),
             b'=' => lex.consume(Token::Equals),
+            b'&' => lex.consume(Token::Ampersand),
             n if n.is_ascii_whitespace() => {
                 lex.next();
                 continue;
@@ -77,6 +80,7 @@ impl Lexer {
 
         match word.as_str() {
             "let" => Token::Let,
+            "mut" => Token::Mut,
             "for" => Token::For,
             "loop" => Token::Loop,
             "fn" => Token::Fn,
@@ -91,7 +95,10 @@ impl Lexer {
     fn get_str(&mut self) -> String {
         let mut id = String::new();
 
-        while let Some(c) = self.peek().filter(u8::is_ascii_alphanumeric) {
+        while let Some(c) = self
+            .peek()
+            .filter(|c| c.is_ascii_alphanumeric() || *c == b'_')
+        {
             id.push(c as char);
             self.next();
         }
@@ -138,6 +145,17 @@ impl Lexer {
 
         Token::Char(byte as char)
     }
+
+    fn match_colon(&mut self) -> Token {
+        self.expect(b':');
+        match self.peek().expect("Unexpected end of input") {
+            b':' => {
+                self.expect(b':');
+                Token::DoubleColon
+            }
+            _ => Token::Colon,
+        }
+    }
 }
 
 #[derive(Debug, PartialEq)]
@@ -147,6 +165,7 @@ pub enum Token {
     For,
     Loop,
     Let,
+    Mut,
     True,
     False,
     Use,
@@ -159,6 +178,7 @@ pub enum Token {
     OpenBrace,
     CloseBrace,
     Colon,
+    Comma,
     DoubleColon,
     Semicolon,
     // operators
@@ -168,6 +188,8 @@ pub enum Token {
     Div,
     Bang,
     Equals,
+    Dot,
+    Ampersand,
     // literals
     String(String),
     Char(char),
