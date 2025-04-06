@@ -12,7 +12,7 @@ impl Ast {
         for def in self.definitions {
             output += &match def {
                 Definition::Struct(_) => todo!(),
-                Definition::Function(f) => format_fn(&f),
+                Definition::Function(f) => fmt_fn(&f),
             };
         }
 
@@ -33,17 +33,17 @@ fn edit_main_signature(defs: &mut [Definition]) {
     main.body.push(Statement::Expression(Expression::I32(0)));
 }
 
-fn format_fn(f: &Function) -> String {
+fn fmt_fn(f: &Function) -> String {
     format!(
         "{} {}({}) {{\n{}\n}}",
         translate_type(&f.return_type),
         f.id.expect_single(),
-        format_params(&f.params),
-        format_body(&f.body, &f.return_type),
+        fmt_params(&f.params),
+        fmt_body(&f.body, &f.return_type),
     )
 }
 
-fn format_params(params: &[Variable]) -> String {
+fn fmt_params(params: &[Variable]) -> String {
     let mut output = vec![];
 
     for p in params {
@@ -53,16 +53,16 @@ fn format_params(params: &[Variable]) -> String {
     output.join(",")
 }
 
-fn format_body(stmts: &[Statement], return_type: &str) -> String {
+fn fmt_body(stmts: &[Statement], return_type: &str) -> String {
     let mut output = Vec::new();
 
     let is_void = return_type == "()";
 
     for (i, s) in stmts.iter().enumerate() {
         let s = if !is_void && i == stmts.len() - 1 {
-            format!("return {}", format_stmt(s))
+            format!("return {}", fmt_stmt(s))
         } else {
-            format_stmt(s)
+            fmt_stmt(s)
         };
 
         output.push(s);
@@ -71,16 +71,16 @@ fn format_body(stmts: &[Statement], return_type: &str) -> String {
     output.join("\n")
 }
 
-fn format_stmt(s: &Statement) -> String {
+fn fmt_stmt(s: &Statement) -> String {
     let stmt = match s {
-        Statement::Expression(expression) => format_expression(expression),
+        Statement::Expression(expression) => fmt_expression(expression),
         Statement::Assignment(_, expression) => todo!(),
     };
 
     stmt + ";"
 }
 
-fn format_expression(expression: &Expression) -> String {
+fn fmt_expression(expression: &Expression) -> String {
     match expression {
         Expression::I32(n) => format!("{}", n),
         Expression::Char(c) => format!("{}", c),
@@ -89,7 +89,7 @@ fn format_expression(expression: &Expression) -> String {
         Expression::UnaryOp(unary_op, expression) => todo!(),
         Expression::BinaryOp(expression, binary_op, expression1) => todo!(),
         Expression::FunctionCall(id, args) | Expression::DeclMacroCall(id, args) => {
-            format!("{}({})", translate_fn(id), format_fn_args(args))
+            format!("{}({})", translate_fn(id), fmt_fn_args(args))
         }
         Expression::Variable(_) => todo!(),
         Expression::MethodCall(_, _, _) => todo!(),
@@ -115,11 +115,11 @@ fn translate_type(t: &str) -> &'static str {
     }
 }
 
-fn format_fn_args(args: &[Expression]) -> String {
+fn fmt_fn_args(args: &[Expression]) -> String {
     let mut output = vec![];
 
     for a in args {
-        output.push(format_expression(a));
+        output.push(fmt_expression(a));
     }
 
     output.join(",")
