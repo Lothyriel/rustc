@@ -1,0 +1,27 @@
+typedef struct {
+  charVec data;
+} String;
+
+String String_new() { return (String){.data = charVec_new()}; }
+
+void String_push_str(String *s, const char *cstr) {
+  while (*cstr) {
+    charVec_push(&s->data, *cstr++);
+  }
+}
+
+void String_push(String *s, char c) { charVec_push(&s->data, c); }
+
+char *String_fmt(const String *s) {
+  char *buffer = malloc(s->data.len + 1);
+
+  for (size_t i = 0; i < s->data.len; ++i) {
+    buffer[i] = s->data.data[i];
+  }
+
+  buffer[s->data.len] = '\0';
+
+  return buffer;
+}
+
+void String_free(String *s) { charVec_free(&s->data); }

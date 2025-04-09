@@ -18,6 +18,8 @@ pub fn tokenize(code: &str) -> Vec<Token> {
             b'+' => lex.consume(Token::Plus),
             // todo add thin arrow disambig
             b'-' => lex.consume(Token::Hyphen),
+            b'>' => lex.consume(Token::ArrowRight),
+            b'<' => lex.consume(Token::ArrowLeft),
             b'*' => lex.consume(Token::Asterisk),
             // todo: add comments parsing
             b'/' => lex.consume(Token::Div),
@@ -36,6 +38,14 @@ pub fn tokenize(code: &str) -> Vec<Token> {
     }
 
     lex.tokens
+}
+
+macro_rules! expect {
+    ($s:expr, $e:expr) => {
+        $s.next()
+            .filter(|n| *n == $e)
+            .unwrap_or_else(|| panic!("Expected {}", $e as char));
+    };
 }
 
 const CHAR_DELIM: u8 = b'\'';
@@ -69,12 +79,6 @@ impl Lexer {
         token
     }
 
-    fn expect(&mut self, expect: u8) {
-        self.next()
-            .filter(|n| *n == expect)
-            .unwrap_or_else(|| panic!("Expected {}", expect as char));
-    }
-
     fn match_str(&mut self) -> Token {
         let word = self.get_str();
 
@@ -86,6 +90,7 @@ impl Lexer {
             "fn" => Token::Fn,
             "use" => Token::Use,
             "struct" => Token::Struct,
+            "impl" => Token::Impl,
             "true" => Token::True,
             "false" => Token::False,
             _ => Token::Identifier(word),
@@ -122,7 +127,7 @@ impl Lexer {
     }
 
     fn match_str_literal(&mut self) -> Token {
-        self.expect(STR_DELIM);
+        expect!(self, STR_DELIM);
 
         let mut id = String::new();
 
@@ -131,26 +136,26 @@ impl Lexer {
             self.next();
         }
 
-        self.expect(STR_DELIM);
+        expect!(self, STR_DELIM);
 
         Token::String(id)
     }
 
     fn match_char_literal(&mut self) -> Token {
-        self.expect(CHAR_DELIM);
+        expect!(self, CHAR_DELIM);
 
         let byte = self.next().expect("Expected char");
 
-        self.expect(CHAR_DELIM);
+        expect!(self, CHAR_DELIM);
 
         Token::Char(byte as char)
     }
 
     fn match_colon(&mut self) -> Token {
-        self.expect(b':');
+        expect!(self, b':');
         match self.peek().expect("Unexpected end of input") {
             b':' => {
-                self.expect(b':');
+                expect!(self, b':');
                 Token::DoubleColon
             }
             _ => Token::Colon,
@@ -170,6 +175,7 @@ pub enum Token {
     False,
     Use,
     Struct,
+    Impl,
     // others
     Identifier(String),
     // syntax symbols
@@ -184,6 +190,8 @@ pub enum Token {
     // operators
     Plus,
     Hyphen,
+    ArrowLeft,
+    ArrowRight,
     Asterisk,
     Div,
     Bang,

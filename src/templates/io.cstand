@@ -1,0 +1,10 @@
+String read_line() {
+  String s = String_new();
+
+  int ch;
+  while ((ch = getchar()) != EOF && ch != '\n') {
+    String_push(&s, (char)ch);
+  }
+
+  return s;
+}

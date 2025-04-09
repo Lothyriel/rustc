@@ -7,7 +7,7 @@ pub fn transpile(code: &str) -> String {
 
     let ast = parser::parse(tokens);
 
-    ast.generate()
+    codegen::generate(ast)
 }
 
 #[cfg(test)]

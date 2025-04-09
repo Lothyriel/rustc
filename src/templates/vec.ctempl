@@ -1,0 +1,25 @@
+typedef struct {
+  {T} * data;
+  size_t len;
+  size_t cap;
+} {T}Vec;
+
+{T}Vec {T}Vec_new() { return ({T}Vec){.data = NULL, .len = 0, .cap = 0}; }
+
+void {T}Vec_push({T}Vec *v, {T} value) {
+  if (v->len == v->cap) {
+    size_t new_cap = v->cap == 0 ? 4 : v->cap * 2;
+
+    v->data = realloc(v->data, new_cap * sizeof({T}));
+    v->cap = new_cap;
+  }
+
+  v->data[v->len++] = value;
+}
+
+void {T}Vec_free({T}Vec *v) {
+  free(v->data);
+  v->data = NULL;
+  v->len = 0;
+  v->cap = 0;
+}
