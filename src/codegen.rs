@@ -59,7 +59,6 @@ struct Gen {
 impl Gen {
     pub fn generate(&mut self) -> String {
         let mut output = String::new();
-        self.drop_dummy_defs();
 
         let includes = vec!["stdio.h", "stdlib.h"];
         write_includes(&mut output, &includes);
@@ -83,14 +82,6 @@ impl Gen {
         }
 
         output
-    }
-
-    #[allow(clippy::match_like_matches_macro)]
-    fn drop_dummy_defs(&mut self) {
-        self.ast.definitions.retain(|def| match def.id() {
-            "read_line" => false,
-            _ => true,
-        })
     }
 
     fn fmt_fn_def(&self, f: &Function, symbols: &HashMap<String, String>) -> String {
@@ -322,14 +313,7 @@ fn get_fn_type(id: &Identifier) -> &'static str {
     match id.segments.as_slice() {
         [c, m] if c == "String" && m == "new" => "String",
         [f] if f == "read_line" => "String",
-        _ => panic!("Translation for function {:?} not found", id),
-    }
-}
-
-fn get_fn_template_specifier(id: &Identifier) -> &'static str {
-    match id.segments.as_slice() {
-        [c, m] if c == "String" && m == "new" => "%s",
-        [f] if f == "read_line" => "%s",
+        [f] if f == "read_int" => "i32",
         _ => panic!("Translation for function {:?} not found", id),
     }
 }
