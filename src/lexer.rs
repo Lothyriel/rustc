@@ -4,7 +4,7 @@ pub fn tokenize(code: &str) -> Vec<Token> {
     while let Some(cur) = lex.peek() {
         let token = match cur {
             n if n.is_ascii_digit() => lex.get_number_literal(),
-            n if n.is_ascii_alphabetic() => lex.match_str(),
+            n if n.is_ascii_alphabetic() || n == b'_' => lex.match_str(),
             CHAR_DELIM => lex.match_char_literal(),
             STR_DELIM => lex.match_str_literal(),
             b'(' => lex.consume(Token::OpenParen),
@@ -89,6 +89,7 @@ impl Lexer {
             "loop" => Token::Loop,
             "fn" => Token::Fn,
             "use" => Token::Use,
+            "in" => Token::In,
             "struct" => Token::Struct,
             "impl" => Token::Impl,
             "true" => Token::True,
@@ -146,9 +147,25 @@ impl Lexer {
 
         let byte = self.next().expect("Expected char");
 
+        let byte = match byte {
+            b'\\' => self.match_escaped_char(byte),
+            _ => byte,
+        };
+
         expect!(self, CHAR_DELIM);
 
         Token::Char(byte as char)
+    }
+
+    fn match_escaped_char(&mut self, byte: u8) -> u8 {
+        match self.next().expect("Unexpected end of input") {
+            b'\\' => b'\\',
+            b'\'' => b'\'',
+            b'\"' => b'\"',
+            b'n' => b'\n',
+            b'0' => b'\0',
+            _ => byte,
+        }
     }
 
     fn match_colon(&mut self) -> Token {
@@ -176,6 +193,7 @@ pub enum Token {
     Use,
     Struct,
     Impl,
+    In,
     // others
     Identifier(String),
     // syntax symbols
