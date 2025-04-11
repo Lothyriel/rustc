@@ -1,3 +1,5 @@
+use std::rc::Rc;
+
 pub fn tokenize(code: &str) -> Vec<Token> {
     let mut lex = Lexer::new(code);
 
@@ -94,7 +96,7 @@ impl Lexer {
             "impl" => Token::Impl,
             "true" => Token::True,
             "false" => Token::False,
-            _ => Token::Identifier(word),
+            _ => Token::Identifier(word.into()),
         }
     }
 
@@ -139,7 +141,7 @@ impl Lexer {
 
         expect!(self, STR_DELIM);
 
-        Token::String(id)
+        Token::String(id.into())
     }
 
     fn match_char_literal(&mut self) -> Token {
@@ -206,7 +208,7 @@ pub enum Token {
     Impl,
     In,
     // others
-    Identifier(String),
+    Identifier(Rc<str>),
     // syntax symbols
     OpenParen,
     CloseParen,
@@ -229,7 +231,7 @@ pub enum Token {
     DoubleDot,
     Ampersand,
     // literals
-    String(String),
+    String(Rc<str>),
     Char(char),
     I32(i32),
 }
@@ -244,14 +246,14 @@ mod tests {
 
         let expected = vec![
             Token::Fn,
-            Token::Identifier("main".to_string()),
+            Token::Identifier("main".into()),
             Token::OpenParen,
             Token::CloseParen,
             Token::OpenBrace,
-            Token::Identifier("println".to_string()),
+            Token::Identifier("println".into()),
             Token::Bang,
             Token::OpenParen,
-            Token::String("Hello, World!".to_string()),
+            Token::String("Hello, World!".into()),
             Token::CloseParen,
             Token::Semicolon,
             Token::CloseBrace,

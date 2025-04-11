@@ -1,3 +1,5 @@
+use std::rc::Rc;
+
 use crate::lexer::Token;
 
 pub fn parse(tokens: Vec<Token>) -> Ast {
@@ -92,7 +94,7 @@ impl Parser {
 
         let return_type = self
             .match_fn_return_type()
-            .unwrap_or(Type::Owned("()".to_string()));
+            .unwrap_or(Type::Owned("()".into()));
 
         let body = self.get_body();
 
@@ -120,7 +122,7 @@ impl Parser {
         body
     }
 
-    fn expect_single_identifier(&mut self) -> String {
+    fn expect_single_identifier(&mut self) -> Rc<str> {
         match self.next().expect("Expected identifier") {
             Token::Identifier(id) => id,
             t => err!(t, self.tokens),
@@ -379,14 +381,14 @@ pub struct Ast {
 pub enum Expression {
     I32(i32),
     Char(char),
-    String(String),
+    String(Rc<str>),
     Bool(bool),
     UnaryOp(UnaryOp, Box<Expression>),
     BinaryOp(Box<Expression>, BinaryOp, Box<Expression>),
     FunctionCall(Identifier, Vec<Expression>),
-    MethodCall(Box<Expression>, String, Vec<Expression>),
+    MethodCall(Box<Expression>, Rc<str>, Vec<Expression>),
     DeclMacroCall(Identifier, Vec<Expression>),
-    Variable(String),
+    Variable(Rc<str>),
     Ref(Box<Expression>),
     MutRef(Box<Expression>),
     For(For),
@@ -396,7 +398,7 @@ pub enum Expression {
 pub struct For {
     pub range: (Box<Expression>, Box<Expression>, Range),
     pub body: Vec<Statement>,
-    pub indexer_name: String,
+    pub indexer_name: Rc<str>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -447,7 +449,7 @@ pub struct ImplBlock;
 
 #[derive(Debug, PartialEq)]
 pub struct Function {
-    pub name: String,
+    pub name: Rc<str>,
     pub params: Vec<Param>,
     pub body: Vec<Statement>,
     pub return_type: Type,
@@ -455,19 +457,19 @@ pub struct Function {
 
 #[derive(Debug, PartialEq)]
 pub struct Struct {
-    name: String,
+    name: Rc<str>,
 }
 
 #[derive(Debug, PartialEq)]
 pub enum Statement {
     Expression(Expression),
-    VarDeclaration(String, Expression, Option<String>),
+    VarDeclaration(Rc<str>, Expression, Option<Rc<str>>),
 }
 
 #[derive(Debug, PartialEq)]
 pub enum Variable {
-    Const(String),
-    Mutable(String),
+    Const(Rc<str>),
+    Mutable(Rc<str>),
 }
 
 #[derive(Debug, PartialEq)]
@@ -476,26 +478,36 @@ pub struct Param {
     pub param_type: Type,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Type {
-    Owned(String),
-    Ref(String),
-    MutRef(String),
+    Owned(Rc<str>),
+    Ref(Rc<str>),
+    MutRef(Rc<str>),
+}
+
+impl Type {
+    pub fn name(&self) -> &str {
+        match self {
+            Type::Owned(n) => n,
+            Type::Ref(n) => n,
+            Type::MutRef(n) => n,
+        }
+    }
 }
 
 #[derive(Debug, PartialEq)]
 pub struct Identifier {
-    pub segments: Vec<String>,
+    pub segments: Vec<Rc<str>>,
 }
 
 impl Identifier {
-    fn new(name: String) -> Self {
+    fn new(name: Rc<str>) -> Self {
         Self {
             segments: vec![name],
         }
     }
 
-    pub fn get_single(mut self) -> String {
+    pub fn get_single(mut self) -> Rc<str> {
         if self.segments.len() == 1 {
             self.segments.pop().unwrap()
         } else {
@@ -512,14 +524,14 @@ mod tests {
     fn hello_world() {
         let input = vec![
             Token::Fn,
-            Token::Identifier("main".to_string()),
+            Token::Identifier("main".into()),
             Token::OpenParen,
             Token::CloseParen,
             Token::OpenBrace,
-            Token::Identifier("println".to_string()),
+            Token::Identifier("println".into()),
             Token::Bang,
             Token::OpenParen,
-            Token::String("Hello, World!".to_string()),
+            Token::String("Hello, World!".into()),
             Token::CloseParen,
             Token::Semicolon,
             Token::CloseBrace,
@@ -530,13 +542,13 @@ mod tests {
         let expected = Ast {
             imports: vec![],
             definitions: vec![Definition::Function(Function {
-                name: "main".to_string(),
+                name: "main".into(),
                 params: vec![],
                 body: vec![Statement::Expression(Expression::DeclMacroCall(
-                    Identifier::new("println".to_string()),
-                    vec![Expression::String("Hello, World!".to_string())],
+                    Identifier::new("println".into()),
+                    vec![Expression::String("Hello, World!".into())],
                 ))],
-                return_type: Type::Owned("()".to_string()),
+                return_type: Type::Owned("()".into()),
             })],
         };
 

@@ -1,15 +1,9 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, rc::Rc};
 
 use crate::parser::{
     Ast, BinaryOp, Definition, Expression, For, Function, Identifier, Param, Range, Statement,
     Type, Variable,
 };
-
-macro_rules! expect_expr_type {
-    ($a:expr, $s:expr) => {
-        get_type($a, $s).unwrap_or_else(|| panic!("Could not define type for: {:?}", $a))
-    };
-}
 
 pub fn generate(ast: Ast) -> String {
     let symbol_table = construct_symbol_table(&ast);
@@ -19,7 +13,9 @@ pub fn generate(ast: Ast) -> String {
     generator.generate()
 }
 
-fn construct_symbol_table(ast: &Ast) -> HashMap<String, HashMap<String, String>> {
+type Symbols = HashMap<Rc<str>, Type>;
+
+fn construct_symbol_table(ast: &Ast) -> HashMap<String, Symbols> {
     let mut symbols = HashMap::new();
 
     for def in &ast.definitions {
@@ -47,39 +43,31 @@ fn get_fn_key(def: &Definition) -> String {
     format!("{}:{}", key, def.id())
 }
 
-fn construct_fn(f: &Function) -> HashMap<String, String> {
+fn construct_fn(f: &Function) -> Symbols {
     let mut symbols = HashMap::new();
 
     for stmt in &f.body {
-        if let Statement::VarDeclaration(name, expr, typ) = stmt {
-            let typ = get_type(expr, &symbols)
-                .or(typ.as_deref())
-                .unwrap_or_else(|| panic!("Variable '{name}' type not defined"));
+        if let Statement::VarDeclaration(name, expr, _) = stmt {
+            let typ = get_type(expr, &symbols);
 
             symbols.insert(name.clone(), typ.to_owned());
         }
     }
 
     for param in &f.params {
-        let typ = match &param.param_type {
-            Type::Owned(n) => n,
-            Type::Ref(n) => n,
-            Type::MutRef(n) => n,
-        };
-
         let name = match &param.name {
             Variable::Const(n) => n,
             Variable::Mutable(n) => n,
         };
 
-        symbols.insert(name.clone(), typ.to_owned());
+        symbols.insert(name.clone(), param.param_type.clone());
     }
 
     symbols
 }
 
 struct Gen {
-    symbol_table: HashMap<String, HashMap<String, String>>,
+    symbol_table: HashMap<String, Symbols>,
     ast: Ast,
 }
 
@@ -113,7 +101,7 @@ impl Gen {
         output
     }
 
-    fn fmt_fn_def(&self, f: &Function, symbols: &HashMap<String, String>) -> String {
+    fn fmt_fn_def(&self, f: &Function, symbols: &Symbols) -> String {
         format!(
             "{} {}({}) {{\n{}\n}}",
             fmt_type(&f.return_type),
@@ -140,10 +128,10 @@ impl Gen {
         output.join(",")
     }
 
-    fn fmt_fn_body(&self, f: &Function, symbols: &HashMap<String, String>) -> String {
+    fn fmt_fn_body(&self, f: &Function, symbols: &Symbols) -> String {
         let mut output = Vec::new();
 
-        let is_void = matches!(&f.return_type, Type::Owned(t) if t == "()");
+        let is_void = matches!(&f.return_type, Type::Owned(_) if f.return_type.name() == "()");
 
         for (i, s) in f.body.iter().enumerate() {
             let ret = if !is_void && i == f.body.len() - 1 {
@@ -158,7 +146,7 @@ impl Gen {
         output.join("\n")
     }
 
-    fn fmt_stmt(&self, s: &Statement, symbols: &HashMap<String, String>) -> String {
+    fn fmt_stmt(&self, s: &Statement, symbols: &Symbols) -> String {
         let stmt = match s {
             Statement::Expression(expr) => self.fmt_expression(expr, symbols),
             Statement::VarDeclaration(id, expr, _) => self.fmt_var_declaration(id, expr, symbols),
@@ -167,7 +155,7 @@ impl Gen {
         stmt + ";\n"
     }
 
-    fn fmt_expression(&self, expression: &Expression, symbols: &HashMap<String, String>) -> String {
+    fn fmt_expression(&self, expression: &Expression, symbols: &Symbols) -> String {
         match expression {
             Expression::For(f) => self.fmt_for(f, symbols),
             Expression::I32(n) => format!("{}", n),
@@ -186,10 +174,9 @@ impl Gen {
             Expression::FunctionCall(id, args) | Expression::DeclMacroCall(id, args) => {
                 self.format_fn_call(id, args, symbols)
             }
-            Expression::Variable(id) => id.clone(),
+            Expression::Variable(id) => id.to_string(),
             Expression::MethodCall(target, id, args) => {
-                let t = get_type(target, symbols)
-                    .unwrap_or_else(|| panic!("Cannot find type for {:?}", target));
+                let t = translate_type(get_type(target, symbols).name());
 
                 format!(
                     "{}_{}({})",
@@ -204,14 +191,11 @@ impl Gen {
         }
     }
 
-    fn format_fn_call(
-        &self,
-        id: &Identifier,
-        args: &[Expression],
-        symbols: &HashMap<String, String>,
-    ) -> String {
+    fn format_fn_call(&self, id: &Identifier, args: &[Expression], symbols: &Symbols) -> String {
         let (id, args) = match id.segments.as_slice() {
-            [x] if x == "println" || x == "print" => self.format_print(x, args, symbols),
+            [x] if x.as_ref() == "println" || x.as_ref() == "print" => {
+                self.format_print(x, args, symbols)
+            }
             _ => (id.segments.join("_"), self.fmt_fn_args(args, symbols)),
         };
 
@@ -222,8 +206,9 @@ impl Gen {
         &self,
         target: &Expression,
         args: &[Expression],
-        symbols: &HashMap<String, String>,
+        symbols: &Symbols,
     ) -> String {
+        //let target_type = get_type(e, symbols)
         let mut output = vec![self.fmt_expression(target, symbols)];
 
         for a in args {
@@ -233,7 +218,7 @@ impl Gen {
         output.join(",")
     }
 
-    fn fmt_fn_args(&self, args: &[Expression], symbols: &HashMap<String, String>) -> String {
+    fn fmt_fn_args(&self, args: &[Expression], symbols: &Symbols) -> String {
         let mut output = vec![];
 
         for a in args {
@@ -247,10 +232,10 @@ impl Gen {
         &self,
         template: &Expression,
         args: &[Expression],
-        symbols: &HashMap<String, String>,
+        symbols: &Symbols,
     ) -> String {
         let mut template = match template {
-            Expression::String(s) => s.clone(),
+            Expression::String(s) => s.to_string(),
             _ => panic!("print first argument must be a template string litteral"),
         };
 
@@ -261,9 +246,9 @@ impl Gen {
                 .next()
                 .expect("Mismatch on args number on template string");
 
-            let typ = expect_expr_type!(arg, symbols);
+            let typ = get_type(arg, symbols);
 
-            let fmt = get_template_specifier(typ);
+            let fmt = get_template_specifier(typ.name());
 
             template = template.replacen("{}", fmt, 1)
         }
@@ -271,26 +256,16 @@ impl Gen {
         template
     }
 
-    fn fmt_var_declaration(
-        &self,
-        id: &str,
-        expr: &Expression,
-        symbols: &HashMap<String, String>,
-    ) -> String {
+    fn fmt_var_declaration(&self, id: &str, expr: &Expression, symbols: &Symbols) -> String {
         format!(
             "{} {} = {}",
-            translate_qualified_type(expr, id, symbols),
+            translate_qualified_type(expr, symbols),
             id,
             self.fmt_expression(expr, symbols)
         )
     }
 
-    fn format_print(
-        &self,
-        id: &str,
-        args: &[Expression],
-        symbols: &HashMap<String, String>,
-    ) -> (String, String) {
+    fn format_print(&self, id: &str, args: &[Expression], symbols: &Symbols) -> (String, String) {
         let ln = if id == "println" { "\\n" } else { "" };
 
         let mut template = args
@@ -300,12 +275,13 @@ impl Gen {
 
         template.push_str(ln);
 
-        let mut final_args = vec![self.fmt_expression(&Expression::String(template), symbols)];
+        let mut final_args =
+            vec![self.fmt_expression(&Expression::String(template.into()), symbols)];
 
         for a in &args[1..] {
             let expr = self.fmt_expression(a, symbols);
 
-            let expr = if expect_expr_type!(a, symbols) == "String" {
+            let expr = if get_type(a, symbols).name() == "String" {
                 format!("String_fmt(&{})", expr)
             } else {
                 expr
@@ -317,7 +293,7 @@ impl Gen {
         ("printf".to_string(), final_args.join(","))
     }
 
-    fn fmt_for(&self, f: &For, symbols: &HashMap<String, String>) -> String {
+    fn fmt_for(&self, f: &For, symbols: &Symbols) -> String {
         let range = match f.range.2 {
             Range::Inclusive => "<=",
             Range::Exclusive => "<",
@@ -325,7 +301,7 @@ impl Gen {
 
         format!(
             "for ({} {} = {}; {} {} {}; ++{}) {{\n{}\n}}",
-            translate_type(expect_expr_type!(&f.range.0, symbols)),
+            translate_type(get_type(&f.range.0, symbols).name()),
             f.indexer_name,
             self.fmt_expression(&f.range.0, symbols),
             f.indexer_name,
@@ -336,7 +312,7 @@ impl Gen {
         )
     }
 
-    fn fmt_body(&self, body: &[Statement], symbols: &HashMap<String, String>) -> String {
+    fn fmt_body(&self, body: &[Statement], symbols: &Symbols) -> String {
         let mut output = Vec::new();
 
         for s in body {
@@ -364,12 +340,12 @@ fn edit_main(defs: &mut [Definition]) {
     let main = defs
         .iter_mut()
         .find_map(|d| match d {
-            Definition::Function(f) if f.name == "main" => Some(f),
+            Definition::Function(f) if f.name.as_ref() == "main" => Some(f),
             _ => None,
         })
         .expect("Program doens't contain main function");
 
-    main.return_type = Type::Owned("i32".to_string());
+    main.return_type = Type::Owned("i32".into());
     main.body.push(Statement::Expression(Expression::I32(0)));
 }
 
@@ -381,32 +357,29 @@ fn write_includes(output: &mut String, includes: &[&str]) {
     output.push('\n');
 }
 
-fn translate_qualified_type<'a>(
-    expr: &Expression,
-    id: &str,
-    symbols: &'a HashMap<String, String>,
-) -> &'a str {
-    let t = get_type(expr, symbols)
-        .or_else(|| symbols.get(id).map(String::as_str))
-        .unwrap_or_else(|| panic!("Variable {id} type not defined"));
+fn translate_qualified_type(expr: &Expression, symbols: &Symbols) -> &'static str {
+    let t = get_type(expr, symbols);
 
-    translate_type(t)
+    translate_type(t.name())
 }
 
 // todo maybe this fn should return enum Type
-fn get_type<'a>(e: &Expression, symbols: &'a HashMap<String, String>) -> Option<&'a str> {
+fn get_type(e: &Expression, symbols: &Symbols) -> Type {
     match e {
-        Expression::I32(_) => Some("i32"),
-        Expression::Char(_) => Some("char"),
-        Expression::String(_) => Some("String"),
-        Expression::Bool(_) => Some("bool"),
-        Expression::For(_) => Some("()"),
+        Expression::I32(_) => Type::Owned("i32".into()),
+        Expression::Char(_) => Type::Owned("char".into()),
+        Expression::String(_) => Type::Owned("String".into()),
+        Expression::Bool(_) => Type::Owned("bool".into()),
+        Expression::For(_) => Type::Owned("()".into()),
         Expression::UnaryOp(_, _) => todo!(),
         Expression::BinaryOp(_, _, _) => todo!(),
-        Expression::FunctionCall(id, _) => Some(get_fn_type(id)),
-        Expression::MethodCall(_, name, _) => get_method_type(name),
+        Expression::FunctionCall(id, _) => Type::Owned(get_fn_type(id).into()),
+        Expression::MethodCall(_, _, _) => todo!(),
         Expression::DeclMacroCall(_, _) => todo!(),
-        Expression::Variable(name) => symbols.get(name).map(|n| n.as_str()),
+        Expression::Variable(name) => symbols
+            .get(name)
+            .cloned()
+            .unwrap_or_else(|| panic!("Type for {name} not found")),
         Expression::Ref(e) => get_type(e, symbols),
         Expression::MutRef(e) => get_type(e, symbols),
     }
@@ -424,13 +397,6 @@ fn fmt_bop(o: &BinaryOp) -> &str {
     }
 }
 
-fn get_method_type(name: &str) -> Option<&'static str> {
-    match name {
-        "collect" => None,
-        _ => None,
-    }
-}
-
 fn fmt_type(t: &Type) -> String {
     match t {
         Type::Owned(t) => translate_type(t).to_string(),
@@ -439,7 +405,7 @@ fn fmt_type(t: &Type) -> String {
     }
 }
 
-fn translate_type(t: &str) -> &str {
+fn translate_type(t: &str) -> &'static str {
     match t {
         "()" => "void",
         "u8" => "char",
@@ -456,9 +422,9 @@ fn translate_type(t: &str) -> &str {
 
 fn get_fn_type(id: &Identifier) -> &'static str {
     match id.segments.as_slice() {
-        [c, m] if c == "String" && m == "new" => "String",
-        [f] if f == "read_line" => "String",
-        [f] if f == "read_usize" => "usize",
+        [c, m] if c.as_ref() == "String" && m.as_ref() == "new" => "String",
+        [f] if f.as_ref() == "read_line" => "String",
+        [f] if f.as_ref() == "read_usize" => "usize",
         _ => panic!("Translation for function {:?} not found", id),
     }
 }
