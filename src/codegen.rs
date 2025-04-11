@@ -1,9 +1,6 @@
 use std::{collections::HashMap, rc::Rc};
 
-use crate::parser::{
-    Ast, BinaryOp, Definition, Expression, For, Function, Identifier, Param, Range, Statement,
-    Type, Variable,
-};
+use crate::parser::*;
 
 pub fn generate(ast: Ast) -> String {
     let symbol_table = construct_symbol_table(&ast);
@@ -172,18 +169,11 @@ impl Gen {
                 )
             }
             Expression::FunctionCall(id, args) | Expression::DeclMacroCall(id, args) => {
-                self.format_fn_call(id, args, symbols)
+                self.fmt_fn_call(id, args, symbols)
             }
             Expression::Variable(id) => id.to_string(),
             Expression::MethodCall(target, id, args) => {
-                let t = translate_type(get_type(target, symbols).name());
-
-                format!(
-                    "{}_{}({})",
-                    t,
-                    id,
-                    self.fmt_method_args(target, args, symbols)
-                )
+                self.fmt_method_call(target, id, args, symbols)
             }
             Expression::Ref(e) | Expression::MutRef(e) => {
                 format!("&{}", self.fmt_expression(e, symbols))
@@ -191,10 +181,10 @@ impl Gen {
         }
     }
 
-    fn format_fn_call(&self, id: &Identifier, args: &[Expression], symbols: &Symbols) -> String {
+    fn fmt_fn_call(&self, id: &Identifier, args: &[Expression], symbols: &Symbols) -> String {
         let (id, args) = match id.segments.as_slice() {
             [x] if x.as_ref() == "println" || x.as_ref() == "print" => {
-                self.format_print(x, args, symbols)
+                self.fmt_print(x, args, symbols)
             }
             _ => (id.segments.join("_"), self.fmt_fn_args(args, symbols)),
         };
@@ -202,14 +192,8 @@ impl Gen {
         format!("{}({})", id, args)
     }
 
-    fn fmt_method_args(
-        &self,
-        target: &Expression,
-        args: &[Expression],
-        symbols: &Symbols,
-    ) -> String {
-        //let target_type = get_type(e, symbols)
-        let mut output = vec![self.fmt_expression(target, symbols)];
+    fn fmt_method_args(&self, target: String, args: &[Expression], symbols: &Symbols) -> String {
+        let mut output = vec![target];
 
         for a in args {
             output.push(self.fmt_expression(a, symbols));
@@ -265,7 +249,7 @@ impl Gen {
         )
     }
 
-    fn format_print(&self, id: &str, args: &[Expression], symbols: &Symbols) -> (String, String) {
+    fn fmt_print(&self, id: &str, args: &[Expression], symbols: &Symbols) -> (String, String) {
         let ln = if id == "println" { "\\n" } else { "" };
 
         let mut template = args
@@ -321,6 +305,35 @@ impl Gen {
 
         output.join("\n")
     }
+
+    fn fmt_method_call(
+        &self,
+        target: &Expression,
+        name: &str,
+        args: &[Expression],
+        symbols: &Symbols,
+    ) -> String {
+        let target_type = get_type(target, symbols);
+
+        let method_type = match (target_type.name(), name) {
+            ("String", "push") => CType::Pointer,
+            ("String", "replace") => CType::Value,
+            _ => panic!("Translation for method {} not found", name),
+        };
+
+        let modifier = match (&target_type, method_type) {
+            (Type::Owned(_), CType::Pointer) => "&",
+            (Type::Owned(_), CType::Value) => "",
+            (Type::Ref(_) | Type::MutRef(_), CType::Pointer) => "",
+            (Type::Ref(_) | Type::MutRef(_), CType::Value) => "*",
+        };
+
+        let target = format!("{}{}", modifier, self.fmt_expression(target, symbols));
+
+        let args = self.fmt_method_args(target, args, symbols);
+
+        format!("{}_{}({})", target_type.name(), name, args)
+    }
 }
 
 fn write_lib(output: &mut String) {
@@ -363,7 +376,6 @@ fn translate_qualified_type(expr: &Expression, symbols: &Symbols) -> &'static st
     translate_type(t.name())
 }
 
-// todo maybe this fn should return enum Type
 fn get_type(e: &Expression, symbols: &Symbols) -> Type {
     match e {
         Expression::I32(_) => Type::Owned("i32".into()),
@@ -418,6 +430,11 @@ fn translate_type(t: &str) -> &'static str {
         "String" => "String",
         _ => panic!("Translation for type {t} not found"),
     }
+}
+
+enum CType {
+    Pointer,
+    Value,
 }
 
 fn get_fn_type(id: &Identifier) -> &'static str {
