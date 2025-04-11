@@ -8,3 +8,10 @@ String read_line() {
 
   return s;
 }
+
+size_t read_usize() {
+  String buf = read_line();
+  size_t num = (size_t)strtoull(String_fmt(&buf), NULL, 10);
+  String_free(&buf);
+  return num;
+}

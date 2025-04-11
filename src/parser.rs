@@ -85,26 +85,16 @@ impl Parser {
 
         let name = self.expect_single_identifier();
 
-        let params = self.get_fn_params();
+        expect!(self, Token::OpenParen);
 
-        let return_type = self.match_fn_return_type().unwrap_or("()".to_string());
+        let mut params = vec![];
+        self.get_fn_params(&mut params);
 
-        expect!(self, Token::OpenBrace);
+        let return_type = self
+            .match_fn_return_type()
+            .unwrap_or(Type::Owned("()".to_string()));
 
-        let mut body = vec![];
-
-        while self.peek().filter(|n| **n != Token::CloseBrace).is_some() {
-            body.push(self.get_statement());
-
-            match self.peek().expect("Unexpected end of input") {
-                Token::CloseBrace => {}
-                _ => {
-                    expect!(self, Token::Semicolon);
-                }
-            };
-        }
-
-        expect!(self, Token::CloseBrace);
+        let body = self.get_body();
 
         Function {
             params,
@@ -114,6 +104,22 @@ impl Parser {
         }
     }
 
+    fn get_body(&mut self) -> Vec<Statement> {
+        expect!(self, Token::OpenBrace);
+
+        let mut body = vec![];
+
+        while self.peek().filter(|n| **n != Token::CloseBrace).is_some() {
+            let stmt = self.get_statement();
+            body.push(stmt);
+            self.optional(Token::Semicolon);
+        }
+
+        expect!(self, Token::CloseBrace);
+
+        body
+    }
+
     fn expect_single_identifier(&mut self) -> String {
         match self.next().expect("Expected identifier") {
             Token::Identifier(id) => id,
@@ -121,23 +127,29 @@ impl Parser {
         }
     }
 
-    fn get_fn_params(&mut self) -> Vec<Variable> {
-        let mut params = vec![];
-
-        expect!(self, Token::OpenParen);
-
-        while self.peek().filter(|n| **n != Token::CloseParen).is_some() {
-            params.push(self.get_fn_param())
+    fn get_fn_params(&mut self, params: &mut Vec<Param>) {
+        if self.peek().filter(|n| **n == Token::CloseParen).is_some() {
+            expect!(self, Token::CloseParen);
+            return;
         }
 
-        expect!(self, Token::CloseParen);
+        params.push(self.get_fn_param());
 
-        params
+        match self.peek().expect("Unexpected end of input") {
+            Token::Comma => {
+                expect!(self, Token::Comma);
+                self.get_fn_params(params);
+            }
+            Token::CloseParen => {
+                expect!(self, Token::CloseParen);
+            }
+            t => err!(t),
+        };
     }
 
     fn get_expression(&mut self) -> Expression {
         let expr = match self.next().expect("Expected statement") {
-            Token::For => todo!(),
+            Token::For => Expression::For(self.get_for()),
             Token::Loop => todo!(),
             Token::Plus => todo!(),
             Token::Hyphen => todo!(),
@@ -154,6 +166,14 @@ impl Parser {
         };
 
         match self.peek().expect("Unexpected end of input") {
+            Token::Hyphen => {
+                expect!(self, Token::Hyphen);
+                Expression::BinaryOp(
+                    Box::new(expr),
+                    BinaryOp::Minus,
+                    Box::new(self.get_expression()),
+                )
+            }
             Token::Dot => self.match_method_expression(expr),
             _ => expr,
         }
@@ -161,26 +181,46 @@ impl Parser {
 
     fn get_statement(&mut self) -> Statement {
         match self.peek().expect("Expected statement") {
-            Token::Let => {
-                expect!(self, Token::Let);
-
-                _ = self.optional(Token::Mut);
-
-                let id = self.expect_single_identifier();
-
-                expect!(self, Token::Equals);
-
-                Statement::Assignment(id, self.get_expression())
-            }
+            Token::Let => self.get_declaration(),
             _ => Statement::Expression(self.get_expression()),
         }
     }
 
-    fn get_fn_param(&mut self) -> Variable {
-        let name = self.expect_single_identifier();
+    fn get_declaration(&mut self) -> Statement {
+        expect!(self, Token::Let);
+
+        _ = self.optional(Token::Mut);
+
+        let id = self.expect_single_identifier();
+
+        let typ = match self.peek().expect("Unexpected end of input") {
+            Token::Colon => {
+                expect!(self, Token::Colon);
+                Some(self.expect_single_identifier())
+            }
+            _ => None,
+        };
+
+        expect!(self, Token::Equals);
+
+        Statement::VarDeclaration(id, self.get_expression(), typ)
+    }
+
+    fn get_fn_param(&mut self) -> Param {
+        let mutable = self.optional(Token::Mut);
+
+        let var = self.expect_single_identifier();
+
+        let name = match mutable {
+            Some(_) => Variable::Mutable(var),
+            None => Variable::Const(var),
+        };
+
         expect!(self, Token::Colon);
-        let var_type = self.expect_single_identifier();
-        Variable { name, var_type }
+
+        let param_type = self.get_type();
+
+        Param { name, param_type }
     }
 
     fn get_import(&mut self) -> Identifier {
@@ -211,33 +251,28 @@ impl Parser {
         todo!()
     }
 
-    fn match_fn_return_type(&mut self) -> Option<String> {
+    fn match_fn_return_type(&mut self) -> Option<Type> {
         match self.peek().expect("Expected -> or {") {
-            Token::Hyphen => Some(self.get_fn_return_type()),
+            Token::Hyphen => {
+                expect!(self, Token::Hyphen);
+                expect!(self, Token::ArrowRight);
+
+                Some(self.get_type())
+            }
             Token::OpenBrace => None,
             t => err!(t),
         }
     }
 
-    fn get_fn_return_type(&mut self) -> String {
-        expect!(self, Token::Hyphen);
-        expect!(self, Token::ArrowRight);
-
-        self.expect_single_identifier()
-    }
-
     fn match_id_expression(&mut self, id: Identifier) -> Expression {
-        match self.peek().expect("Expected ; or ( or ! or ::") {
+        match self.peek().expect("Unexpected end of input") {
             Token::Bang => {
                 expect!(self, Token::Bang);
                 Expression::DeclMacroCall(id, self.get_fn_args())
             }
             Token::OpenParen => Expression::FunctionCall(id, self.get_fn_args()),
-            Token::Semicolon | Token::Dot | Token::CloseParen | Token::CloseBrace => {
-                Expression::Variable(id.get_single())
-            }
             Token::DoubleColon => self.get_path_expression(id),
-            t => err!(t),
+            _ => Expression::Variable(id.get_single()),
         }
     }
 
@@ -293,6 +328,45 @@ impl Parser {
     fn get_impl_block(&self) -> ImplBlock {
         todo!()
     }
+
+    fn get_for(&mut self) -> For {
+        let id = self.expect_single_identifier();
+
+        expect!(self, Token::In);
+
+        let start = self.get_expression();
+
+        expect!(self, Token::DoubleDot);
+
+        let range = match self.optional(Token::Equals) {
+            Some(_) => Range::Inclusive,
+            None => Range::Exclusive,
+        };
+
+        let end = self.get_expression();
+
+        let body = self.get_body();
+
+        For {
+            indexer_name: id,
+            range: (Box::new(start), Box::new(end), range),
+            body,
+        }
+    }
+
+    fn get_type(&mut self) -> Type {
+        let ptr = self.optional(Token::Ampersand);
+        let mutable = self.optional(Token::Mut);
+        let name = self.expect_single_identifier();
+
+        match ptr {
+            Some(_) => match mutable {
+                Some(_) => Type::MutRef(name),
+                None => Type::Ref(name),
+            },
+            None => Type::Owned(name),
+        }
+    }
 }
 
 #[derive(Debug, PartialEq)]
@@ -315,6 +389,20 @@ pub enum Expression {
     Variable(String),
     Ref(Box<Expression>),
     MutRef(Box<Expression>),
+    For(For),
+}
+
+#[derive(Debug, PartialEq)]
+pub struct For {
+    pub range: (Box<Expression>, Box<Expression>, Range),
+    pub body: Vec<Statement>,
+    pub indexer_name: String,
+}
+
+#[derive(Debug, PartialEq)]
+pub enum Range {
+    Inclusive,
+    Exclusive,
 }
 
 #[derive(Debug, PartialEq)]
@@ -360,27 +448,39 @@ pub struct ImplBlock;
 #[derive(Debug, PartialEq)]
 pub struct Function {
     pub name: String,
-    pub params: Vec<Variable>,
+    pub params: Vec<Param>,
     pub body: Vec<Statement>,
-    pub return_type: String,
+    pub return_type: Type,
 }
 
 #[derive(Debug, PartialEq)]
 pub struct Struct {
     name: String,
-    fields: Vec<Variable>,
 }
 
 #[derive(Debug, PartialEq)]
 pub enum Statement {
     Expression(Expression),
-    Assignment(String, Expression),
+    VarDeclaration(String, Expression, Option<String>),
 }
 
 #[derive(Debug, PartialEq)]
-pub struct Variable {
-    pub name: String,
-    pub var_type: String,
+pub enum Variable {
+    Const(String),
+    Mutable(String),
+}
+
+#[derive(Debug, PartialEq)]
+pub struct Param {
+    pub name: Variable,
+    pub param_type: Type,
+}
+
+#[derive(Debug, PartialEq)]
+pub enum Type {
+    Owned(String),
+    Ref(String),
+    MutRef(String),
 }
 
 #[derive(Debug, PartialEq)]
@@ -436,7 +536,7 @@ mod tests {
                     Identifier::new("println".to_string()),
                     vec![Expression::String("Hello, World!".to_string())],
                 ))],
-                return_type: "()".to_string(),
+                return_type: Type::Owned("()".to_string()),
             })],
         };
 

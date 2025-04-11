@@ -1,27 +1,33 @@
 typedef struct {
-  charVec data;
+  charVec chars;
 } String;
 
-String String_new() { return (String){.data = charVec_new()}; }
+String String_new() { return (String){.chars = charVec_new()}; }
 
-void String_push_str(String *s, const char *cstr) {
+void String_push(String *s, char c) { charVec_push(&s->chars, c); }
+
+void String_push_slice(String *s, const char *cstr) {
   while (*cstr) {
-    charVec_push(&s->data, *cstr++);
+    charVec_push(&s->chars, *cstr++);
   }
 }
 
-void String_push(String *s, char c) { charVec_push(&s->data, c); }
+void String_push_str(String *s, String *o) {
+  for (size_t i = 0; i < o->chars.len; ++i) {
+    String_push(s, o->chars.data[i]);
+  }
+}
 
 char *String_fmt(const String *s) {
-  char *buffer = malloc(s->data.len + 1);
+  char *buffer = malloc(s->chars.len + 1);
 
-  for (size_t i = 0; i < s->data.len; ++i) {
-    buffer[i] = s->data.data[i];
+  for (size_t i = 0; i < s->chars.len; ++i) {
+    buffer[i] = s->chars.data[i];
   }
 
-  buffer[s->data.len] = '\0';
+  buffer[s->chars.len] = '\0';
 
   return buffer;
 }
 
-void String_free(String *s) { charVec_free(&s->data); }
+void String_free(String *s) { charVec_free(&s->chars); }

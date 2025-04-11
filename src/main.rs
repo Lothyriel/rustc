@@ -1,5 +1,6 @@
 fn main() {
-    let output = rustc::transpile(include_str!("../test_data/cs50/hello.rs"));
+    let input = include_str!("../test_data/cs50/mario.rs");
+    let output = rustc::transpile(input);
 
     println!("{}", output)
 }

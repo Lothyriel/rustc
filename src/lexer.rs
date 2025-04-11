@@ -24,7 +24,7 @@ pub fn tokenize(code: &str) -> Vec<Token> {
             // todo: add comments parsing
             b'/' => lex.consume(Token::Div),
             b'!' => lex.consume(Token::Bang),
-            b'.' => lex.consume(Token::Dot),
+            b'.' => lex.match_dot(),
             b'=' => lex.consume(Token::Equals),
             b'&' => lex.consume(Token::Ampersand),
             n if n.is_ascii_whitespace() => {
@@ -178,6 +178,17 @@ impl Lexer {
             _ => Token::Colon,
         }
     }
+
+    fn match_dot(&mut self) -> Token {
+        expect!(self, b'.');
+        match self.peek().expect("Unexpected end of input") {
+            b'.' => {
+                expect!(self, b'.');
+                Token::DoubleDot
+            }
+            _ => Token::Dot,
+        }
+    }
 }
 
 #[derive(Debug, PartialEq)]
@@ -215,6 +226,7 @@ pub enum Token {
     Bang,
     Equals,
     Dot,
+    DoubleDot,
     Ampersand,
     // literals
     String(String),
