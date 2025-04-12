@@ -3,11 +3,7 @@ use std::{collections::HashMap, rc::Rc};
 use crate::parser::*;
 
 pub fn generate(ast: Ast) -> String {
-    let symbol_table = construct_symbol_table(&ast);
-
-    let mut generator = Gen { symbol_table, ast };
-
-    generator.generate()
+    Gen::new(ast).generate()
 }
 
 type Symbols = HashMap<Rc<str>, Type>;
@@ -69,14 +65,20 @@ struct Gen {
 }
 
 impl Gen {
-    pub fn generate(&mut self) -> String {
+    fn new(mut ast: Ast) -> Self {
+        let symbol_table = construct_symbol_table(&ast);
+
+        edit_main(&mut ast.definitions);
+
+        Self { symbol_table, ast }
+    }
+
+    fn generate(&self) -> String {
         let mut output = String::new();
 
         let includes = vec!["stdio.h", "stdlib.h"];
         write_includes(&mut output, &includes);
         write_lib(&mut output);
-
-        edit_main(self.ast.definitions.as_mut_slice());
 
         for def in &self.ast.definitions {
             let def_key = get_fn_key(def);
@@ -348,8 +350,6 @@ fn write_lib(output: &mut String) {
 }
 
 fn edit_main(defs: &mut [Definition]) {
-    defs.reverse();
-
     let main = defs
         .iter_mut()
         .find_map(|d| match d {
@@ -360,6 +360,8 @@ fn edit_main(defs: &mut [Definition]) {
 
     main.return_type = Type::Owned("i32".into());
     main.body.push(Statement::Expression(Expression::I32(0)));
+
+    defs.reverse();
 }
 
 fn write_includes(output: &mut String, includes: &[&str]) {
