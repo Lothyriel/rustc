@@ -6,12 +6,11 @@ fn mario() {
     let input = read_line();
     println!("Height: {}", input);
 
-    let Ok(height) = input.parse::<i32>() else {
+    let Ok(height) = input.parse::<usize>() else {
         return mario();
     };
 
-    let mut buf = String::new();
-
+    let mut buf = String::new()
     for h in 1..=height {
         repeat(&mut buf, ' ', height - h);
         repeat(&mut buf, '#', h);
@@ -23,7 +22,7 @@ fn mario() {
     println!("{}", buf);
 }
 
-fn repeat(output: &mut String, c: char, count: i32) {
+fn repeat(output: &mut String, c: char, count: usize) {
     for _ in 0..count {
         output.push(c);
     }
