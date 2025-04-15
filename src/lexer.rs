@@ -96,6 +96,9 @@ impl Lexer {
             "impl" => Token::Impl,
             "true" => Token::True,
             "false" => Token::False,
+            "if" => Token::If,
+            "else" => Token::Else,
+            "return" => Token::Return,
             _ => Token::Identifier(word.into()),
         }
     }
@@ -207,6 +210,8 @@ pub enum Token {
     Struct,
     Impl,
     In,
+    If,
+    Else,
     // others
     Identifier(Rc<str>),
     // syntax symbols
@@ -234,6 +239,7 @@ pub enum Token {
     String(Rc<str>),
     Char(char),
     I32(i32),
+    Return,
 }
 
 #[cfg(test)]
