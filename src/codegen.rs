@@ -40,11 +40,15 @@ fn construct_fn(f: &Function) -> Symbols {
     let mut symbols = HashMap::new();
 
     for stmt in &f.body {
-        if let Statement::VarDeclaration(name, expr, _) = stmt {
-            let typ = get_type(expr, &symbols);
+        let (name, expr) = match stmt {
+            Statement::UnpackVarDeclaration(u) => (&u.id, &u.value),
+            Statement::VarDeclaration(name, expr) => (name, expr),
+            Statement::MutableVarDeclaration(name, expr) => (name, expr),
+            _ => continue,
+        };
 
-            symbols.insert(name.clone(), typ.to_owned());
-        }
+        let typ = get_type(expr, &symbols);
+        symbols.insert(name.clone(), typ.to_owned());
     }
 
     for param in &f.params {
@@ -145,10 +149,16 @@ impl Gen {
         output.join("\n")
     }
 
-    fn fmt_stmt(&self, s: &Statement, symbols: &Symbols) -> String {
-        let stmt = match s {
+    fn fmt_stmt(&self, stmt: &Statement, symbols: &Symbols) -> String {
+        let stmt = match stmt {
             Statement::Expression(expr) => self.fmt_expression(expr, symbols),
-            Statement::VarDeclaration(id, expr, _) => self.fmt_var_declaration(id, expr, symbols),
+            Statement::VarDeclaration(id, expr) | Statement::MutableVarDeclaration(id, expr) => {
+                self.fmt_var_declaration(id, expr, symbols)
+            }
+            Statement::UnpackVarDeclaration(_) => todo!(),
+            Statement::Return(expr) => {
+                format!("return {}", self.fmt_expression(expr, symbols))
+            }
         };
 
         stmt + ";\n"
@@ -170,6 +180,7 @@ impl Gen {
                     self.fmt_expression(r, symbols)
                 )
             }
+            Expression::GenericMethodCall(_) => todo!(),
             Expression::FunctionCall(id, args) | Expression::DeclMacroCall(id, args) => {
                 self.fmt_fn_call(id, args, symbols)
             }
@@ -339,12 +350,16 @@ impl Gen {
 }
 
 fn write_lib(output: &mut String) {
-    let vec = &include_str!("templates/vec.ctempl").replace("{T}", "char");
-    let string = include_str!("templates/str.cstand");
-    let io = include_str!("templates/io.cstand");
+    let libs = [
+        include_str!("templates/ext.cstand"),
+        &include_str!("templates/result.ctempl").replace("{T}", "int"),
+        &include_str!("templates/vec.ctempl").replace("{T}", "char"),
+        include_str!("templates/str.cstand"),
+        include_str!("templates/io.cstand"),
+    ];
 
-    for t in [vec, string, io] {
-        output.push_str(t);
+    for lib in libs {
+        output.push_str(lib);
         output.push('\n');
     }
 }
@@ -388,6 +403,7 @@ fn get_type(e: &Expression, symbols: &Symbols) -> Type {
         Expression::UnaryOp(_, _) => todo!(),
         Expression::BinaryOp(_, _, _) => todo!(),
         Expression::FunctionCall(id, _) => Type::Owned(get_fn_type(id).into()),
+        Expression::GenericMethodCall(u) => Type::Owned(u.generic.clone()),
         Expression::MethodCall(_, _, _) => todo!(),
         Expression::DeclMacroCall(_, _) => todo!(),
         Expression::Variable(name) => symbols
