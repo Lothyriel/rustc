@@ -151,7 +151,7 @@ impl Parser {
         };
     }
 
-    fn get_expression(&mut self) -> Expression {
+    fn get_expr(&mut self) -> Expression {
         let expr = match self.next().expect("Expected statement") {
             Token::For => Expression::For(self.get_for()),
             Token::Loop => todo!(),
@@ -172,11 +172,7 @@ impl Parser {
         match self.peek().expect("Unexpected end of input") {
             Token::Hyphen => {
                 expect!(self, Token::Hyphen);
-                Expression::BinaryOp(
-                    Box::new(expr),
-                    BinaryOp::Minus,
-                    Box::new(self.get_expression()),
-                )
+                Expression::BinaryOp(Box::new(expr), BinaryOp::Minus, Box::new(self.get_expr()))
             }
             Token::Dot => self.match_method_expression(expr),
             _ => expr,
@@ -185,29 +181,32 @@ impl Parser {
 
     fn get_statement(&mut self) -> Statement {
         match self.peek().expect("Expected statement") {
-            Token::Let => self.get_declaration(),
-            _ => Statement::Expression(self.get_expression()),
+            Token::Let => self.match_declaration(),
+            Token::Return => self.get_return_stmt(),
+            _ => Statement::Expression(self.get_expr()),
         }
     }
 
-    fn get_declaration(&mut self) -> Statement {
+    fn match_declaration(&mut self) -> Statement {
         expect!(self, Token::Let);
 
-        _ = self.optional(Token::Mut);
+        let mutable = self.optional(Token::Mut);
 
         let id = self.expect_single_identifier();
 
-        let typ = match self.peek().expect("Unexpected end of input") {
-            Token::Colon => {
-                expect!(self, Token::Colon);
-                Some(self.expect_single_identifier())
-            }
-            _ => None,
-        };
+        match self.peek().expect("Unexpected end of input") {
+            Token::OpenParen if mutable.is_none() => return self.get_unpack_var_declaration(id),
+            _ => {}
+        }
 
         expect!(self, Token::Equals);
 
-        Statement::VarDeclaration(id, self.get_expression(), typ)
+        let expr = self.get_expr();
+
+        match mutable {
+            Some(_) => Statement::MutableVarDeclaration(id, expr),
+            None => Statement::VarDeclaration(id, expr),
+        }
     }
 
     fn get_fn_param(&mut self) -> Param {
@@ -274,8 +273,8 @@ impl Parser {
                 expect!(self, Token::Bang);
                 Expression::DeclMacroCall(id, self.get_fn_args())
             }
-            Token::OpenParen => Expression::FunctionCall(id, self.get_fn_args()),
             Token::DoubleColon => self.get_path_expression(id),
+            Token::OpenParen => Expression::FunctionCall(id, self.get_fn_args()),
             _ => Expression::Variable(id.get_single()),
         }
     }
@@ -286,7 +285,7 @@ impl Parser {
         let mut args = vec![];
 
         while self.peek().filter(|n| **n != Token::CloseParen).is_some() {
-            args.push(self.get_expression());
+            args.push(self.get_expr());
             _ = self.optional(Token::Comma);
         }
 
@@ -308,12 +307,9 @@ impl Parser {
 
         let id = self.expect_single_identifier();
 
-        let args = self.get_fn_args();
-        let expr = Expression::MethodCall(Box::new(target), id, args);
-
         match self.peek().expect("Unexpected end of input") {
-            Token::Semicolon => expr,
-            Token::Dot => self.match_method_expression(expr),
+            Token::DoubleColon => self.get_generic_method_call(target, id),
+            Token::OpenParen => self.get_method_call(target, id),
             t => err!(t),
         }
     }
@@ -321,7 +317,7 @@ impl Parser {
     fn get_ref(&mut self) -> Expression {
         let mutable = self.optional(Token::Mut);
 
-        let expr = Box::new(self.get_expression());
+        let expr = Box::new(self.get_expr());
 
         match mutable {
             Some(_) => Expression::MutRef(expr),
@@ -338,7 +334,7 @@ impl Parser {
 
         expect!(self, Token::In);
 
-        let start = self.get_expression();
+        let start = self.get_expr();
 
         expect!(self, Token::DoubleDot);
 
@@ -347,7 +343,7 @@ impl Parser {
             None => Range::Exclusive,
         };
 
-        let end = self.get_expression();
+        let end = self.get_expr();
 
         let body = self.get_body();
 
@@ -371,6 +367,58 @@ impl Parser {
             None => Type::Owned(name),
         }
     }
+
+    fn get_unpack_var_declaration(&mut self, pattern: Rc<str>) -> Statement {
+        expect!(self, Token::OpenParen);
+        let id = self.expect_single_identifier();
+        expect!(self, Token::CloseParen);
+
+        expect!(self, Token::Equals);
+
+        let value = self.get_expr();
+
+        expect!(self, Token::Else);
+
+        let else_clause = self.get_body();
+
+        Statement::UnpackVarDeclaration(UnpackVarDeclaration {
+            pattern,
+            id,
+            value,
+            else_clause,
+        })
+    }
+
+    fn get_generic_method_call(&mut self, target: Expression, name: Rc<str>) -> Expression {
+        expect!(self, Token::DoubleColon);
+        expect!(self, Token::ArrowLeft);
+        let generic = self.expect_single_identifier();
+        expect!(self, Token::ArrowRight);
+
+        Expression::GenericMethodCall(GenericMethodCall {
+            target: Box::new(target),
+            name,
+            generic,
+            args: self.get_fn_args(),
+        })
+    }
+
+    fn get_method_call(&mut self, target: Expression, id: Rc<str>) -> Expression {
+        let args = self.get_fn_args();
+        let expr = Expression::MethodCall(Box::new(target), id, args);
+
+        match self.peek().expect("Unexpected end of input") {
+            Token::Semicolon => expr,
+            Token::Dot => self.match_method_expression(expr),
+            t => err!(t),
+        }
+    }
+
+    fn get_return_stmt(&mut self) -> Statement {
+        expect!(self, Token::Return);
+
+        Statement::Return(self.get_expr())
+    }
 }
 
 #[derive(Debug, PartialEq)]
@@ -389,11 +437,20 @@ pub enum Expression {
     BinaryOp(Box<Expression>, BinaryOp, Box<Expression>),
     FunctionCall(Identifier, Vec<Expression>),
     MethodCall(Box<Expression>, Rc<str>, Vec<Expression>),
+    GenericMethodCall(GenericMethodCall),
     DeclMacroCall(Identifier, Vec<Expression>),
     Variable(Rc<str>),
     Ref(Box<Expression>),
     MutRef(Box<Expression>),
     For(For),
+}
+
+#[derive(Debug, PartialEq)]
+pub struct GenericMethodCall {
+    pub target: Box<Expression>,
+    pub name: Rc<str>,
+    pub args: Vec<Expression>,
+    pub generic: Rc<str>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -465,7 +522,18 @@ pub struct Struct {
 #[derive(Debug, PartialEq)]
 pub enum Statement {
     Expression(Expression),
-    VarDeclaration(Rc<str>, Expression, Option<Rc<str>>),
+    UnpackVarDeclaration(UnpackVarDeclaration),
+    VarDeclaration(Rc<str>, Expression),
+    MutableVarDeclaration(Rc<str>, Expression),
+    Return(Expression),
+}
+
+#[derive(Debug, PartialEq)]
+pub struct UnpackVarDeclaration {
+    pub id: Rc<str>,
+    pub pattern: Rc<str>,
+    pub value: Expression,
+    pub else_clause: Vec<Statement>,
 }
 
 #[derive(Debug, PartialEq)]
