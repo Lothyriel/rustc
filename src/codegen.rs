@@ -151,20 +151,20 @@ impl Gen {
 
     fn fmt_stmt(&self, stmt: &Statement, symbols: &Symbols) -> String {
         let stmt = match stmt {
-            Statement::Expression(expr) => self.fmt_expression(expr, symbols),
+            Statement::Expression(expr) => self.fmt_expr(expr, symbols),
             Statement::VarDeclaration(id, expr) | Statement::MutableVarDeclaration(id, expr) => {
                 self.fmt_var_declaration(id, expr, symbols)
             }
-            Statement::UnpackVarDeclaration(_) => todo!(),
+            Statement::UnpackVarDeclaration(u) => self.fmt_unpack_var_declaration(u, symbols),
             Statement::Return(expr) => {
-                format!("return {}", self.fmt_expression(expr, symbols))
+                format!("return {}", self.fmt_expr(expr, symbols))
             }
         };
 
         stmt + ";\n"
     }
 
-    fn fmt_expression(&self, expression: &Expression, symbols: &Symbols) -> String {
+    fn fmt_expr(&self, expression: &Expression, symbols: &Symbols) -> String {
         match expression {
             Expression::For(f) => self.fmt_for(f, symbols),
             Expression::I32(n) => format!("{}", n),
@@ -175,12 +175,16 @@ impl Gen {
             Expression::BinaryOp(l, o, r) => {
                 format!(
                     "{} {} {}",
-                    self.fmt_expression(l, symbols),
+                    self.fmt_expr(l, symbols),
                     fmt_bop(o),
-                    self.fmt_expression(r, symbols)
+                    self.fmt_expr(r, symbols)
                 )
             }
-            Expression::GenericMethodCall(_) => todo!(),
+            Expression::GenericMethodCall(u) => {
+                let name = format!("{}_{}", u.name, translate_type(&u.generic));
+
+                self.fmt_method_call(&u.target, &name, &u.args, symbols)
+            }
             Expression::FunctionCall(id, args) | Expression::DeclMacroCall(id, args) => {
                 self.fmt_fn_call(id, args, symbols)
             }
@@ -189,7 +193,7 @@ impl Gen {
                 self.fmt_method_call(target, id, args, symbols)
             }
             Expression::Ref(e) | Expression::MutRef(e) => {
-                format!("&{}", self.fmt_expression(e, symbols))
+                format!("&{}", self.fmt_expr(e, symbols))
             }
         }
     }
@@ -209,7 +213,7 @@ impl Gen {
         let mut output = vec![target];
 
         for a in args {
-            output.push(self.fmt_expression(a, symbols));
+            output.push(self.fmt_expr(a, symbols));
         }
 
         output.join(",")
@@ -219,7 +223,7 @@ impl Gen {
         let mut output = vec![];
 
         for a in args {
-            output.push(self.fmt_expression(a, symbols));
+            output.push(self.fmt_expr(a, symbols));
         }
 
         output.join(",")
@@ -258,7 +262,7 @@ impl Gen {
             "{} {} = {}",
             translate_qualified_type(expr, symbols),
             id,
-            self.fmt_expression(expr, symbols)
+            self.fmt_expr(expr, symbols)
         )
     }
 
@@ -272,11 +276,10 @@ impl Gen {
 
         template.push_str(ln);
 
-        let mut final_args =
-            vec![self.fmt_expression(&Expression::String(template.into()), symbols)];
+        let mut final_args = vec![self.fmt_expr(&Expression::String(template.into()), symbols)];
 
         for a in &args[1..] {
-            let expr = self.fmt_expression(a, symbols);
+            let expr = self.fmt_expr(a, symbols);
 
             let expr = if get_type(a, symbols).name() == "String" {
                 format!("String_fmt(&{})", expr)
@@ -300,10 +303,10 @@ impl Gen {
             "for ({} {} = {}; {} {} {}; ++{}) {{\n{}\n}}",
             translate_type(get_type(&f.range.0, symbols).name()),
             f.indexer_name,
-            self.fmt_expression(&f.range.0, symbols),
+            self.fmt_expr(&f.range.0, symbols),
             f.indexer_name,
             range,
-            self.fmt_expression(&f.range.1, symbols),
+            self.fmt_expr(&f.range.1, symbols),
             f.indexer_name,
             self.fmt_body(&f.body, symbols)
         )
@@ -330,6 +333,8 @@ impl Gen {
 
         let method_type = match (target_type.name(), name) {
             ("String", "push") => CType::Pointer,
+            //todo: make parse match with any type arg (parse_type)
+            ("String", "parse_size_t") => CType::Pointer,
             ("String", "replace") => CType::Value,
             _ => panic!("Translation for method {} not found", name),
         };
@@ -341,18 +346,40 @@ impl Gen {
             (Type::Ref(_) | Type::MutRef(_), CType::Value) => "*",
         };
 
-        let target = format!("{}{}", modifier, self.fmt_expression(target, symbols));
+        let target = format!("{}{}", modifier, self.fmt_expr(target, symbols));
 
         let args = self.fmt_method_args(target, args, symbols);
 
         format!("{}_{}({})", target_type.name(), name, args)
+    }
+
+    fn fmt_unpack_var_declaration(&self, u: &UnpackVarDeclaration, symbols: &Symbols) -> String {
+        let mut output = Vec::new();
+
+        let var_type = translate_type(get_type(&u.value, symbols).name());
+
+        let value = self.fmt_expr(&u.value, symbols);
+
+        // todo: transform this into statements and self.fmt_body()
+        output.push(format!("Result_{} {}_result = {};", var_type, u.id, value));
+        output.push(format!("{} {};", var_type, u.id));
+        output.push(format!(
+            "if ({}_result.tag == OK) {{ {} = {}_result.ok; }}",
+            u.id, u.id, u.id
+        ));
+        output.push(format!(
+            "else {{ {} }}",
+            self.fmt_body(&u.else_clause, symbols)
+        ));
+
+        output.join("\n")
     }
 }
 
 fn write_lib(output: &mut String) {
     let libs = [
         include_str!("templates/ext.cstand"),
-        &include_str!("templates/result.ctempl").replace("{T}", "int"),
+        &include_str!("templates/result.ctempl").replace("{T}", "size_t"),
         &include_str!("templates/vec.ctempl").replace("{T}", "char"),
         include_str!("templates/str.cstand"),
         include_str!("templates/io.cstand"),
