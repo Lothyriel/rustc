@@ -18,11 +18,13 @@ macro_rules! err {
 }
 
 macro_rules! expect {
-    ($s:expr, $e:expr) => {
-        $s.next()
-            .filter(|n| *n == $e)
-            .unwrap_or_else(|| panic!("Tokens: {:?}\n\nExpected {:?}", $s.tokens, $e))
-    };
+    ($s:expr, $e:expr) => {{
+        let n = $s.next();
+
+        n.as_ref()
+            .filter(|n| **n == $e)
+            .unwrap_or_else(|| panic!("Tokens: {:?}\n\nExpected {:?} | Got {:?}", $s.tokens, $e, n))
+    }};
 }
 
 struct Parser {
