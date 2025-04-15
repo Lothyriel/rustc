@@ -159,6 +159,11 @@ impl Gen {
             Statement::Return(expr) => {
                 format!("return {}", self.fmt_expr(expr, symbols))
             }
+            Statement::If(expr, body) => format!(
+                "if ({}) {{ {} }}",
+                self.fmt_expr(expr, symbols),
+                self.fmt_body(body, symbols)
+            ),
         };
 
         stmt + ";\n"
@@ -451,6 +456,7 @@ fn fmt_bop(o: &BinaryOp) -> &str {
         BinaryOp::Mod => todo!(),
         BinaryOp::And => todo!(),
         BinaryOp::Or => todo!(),
+        BinaryOp::Equals => "==",
     }
 }
 
