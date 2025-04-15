@@ -1,0 +1,7 @@
+typedef struct {
+  Result tag;
+  union {
+    {T} ok;
+    char *err;
+  };
+} Result_{T};

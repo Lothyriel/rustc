@@ -1,0 +1,5 @@
+typedef enum { false, true } bool;
+
+typedef enum { OK, ERR } Result;
+
+bool char_is_ascii_digit(char c) { return c >= '0' && c <= '9'; }

@@ -2,6 +2,35 @@ typedef struct {
   charVec chars;
 } String;
 
+Result_int String_parse_int(const String *s) {
+  if (s->chars.len == 0) {
+    return (Result_int){.tag = ERR, .err = "Empty string"};
+  }
+
+  int start;
+  int sign;
+
+  if (s->chars.data[0] == '-') {
+    start = 1;
+    sign = -1;
+  } else {
+    start = 0;
+    sign = 1;
+  }
+
+  int result = 0;
+  for (size_t i = start; i < s->chars.len; i++) {
+    char c = s->chars.data[i];
+    if (!char_is_ascii_digit(c)) {
+      return (Result_int){.tag = ERR, .err = "Non numeric char found"};
+    }
+
+    result = result * 10 + (c - '0');
+  }
+
+  return (Result_int){.tag = OK, .ok = result * sign};
+}
+
 String String_new() { return (String){.chars = charVec_new()}; }
 
 void String_push(String *s, char c) { charVec_push(&s->chars, c); }
