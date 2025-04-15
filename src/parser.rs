@@ -174,6 +174,10 @@ impl Parser {
                 expect!(self, Token::Hyphen);
                 Expression::BinaryOp(Box::new(expr), BinaryOp::Minus, Box::new(self.get_expr()))
             }
+            Token::DoubleEquals => {
+                expect!(self, Token::DoubleEquals);
+                Expression::BinaryOp(Box::new(expr), BinaryOp::Equals, Box::new(self.get_expr()))
+            }
             Token::Dot => self.match_method_expression(expr),
             _ => expr,
         }
@@ -183,6 +187,7 @@ impl Parser {
         match self.peek().expect("Expected statement") {
             Token::Let => self.match_declaration(),
             Token::Return => self.get_return_stmt(),
+            Token::If => self.get_if(),
             _ => Statement::Expression(self.get_expr()),
         }
     }
@@ -419,6 +424,16 @@ impl Parser {
 
         Statement::Return(self.get_expr())
     }
+
+    fn get_if(&mut self) -> Statement {
+        expect!(self, Token::If);
+
+        let cond = Box::new(self.get_expr());
+
+        let body = self.get_body();
+
+        Statement::If(cond, body)
+    }
 }
 
 #[derive(Debug, PartialEq)]
@@ -475,6 +490,7 @@ pub enum BinaryOp {
     Mod,
     And,
     Or,
+    Equals,
 }
 
 #[derive(Debug, PartialEq)]
@@ -526,6 +542,7 @@ pub enum Statement {
     VarDeclaration(Rc<str>, Expression),
     MutableVarDeclaration(Rc<str>, Expression),
     Return(Expression),
+    If(Box<Expression>, Vec<Statement>),
 }
 
 #[derive(Debug, PartialEq)]
